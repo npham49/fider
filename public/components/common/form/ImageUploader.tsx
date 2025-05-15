@@ -1,6 +1,6 @@
 import "./ImageUploader.scss"
 
-import React from "react"
+import React, { useRef, useState } from "react"
 import { ValidationContext } from "./Form"
 import { DisplayError, hasError } from "./DisplayError"
 import { classSet, fileToBase64, uploadedImageURL } from "@fider/services"
@@ -22,23 +22,20 @@ interface ImageUploaderProps {
 
 interface ImageUploaderState extends ImageUpload {
   previewURL?: string
-  showModal: boolean
 }
 
-export class ImageUploader extends React.Component<ImageUploaderProps, ImageUploaderState> {
-  private fileSelector?: HTMLInputElement | null
+export const ImageUploader = (props: ImageUploaderProps) => {
+  const [state, setState] = useState<ImageUploaderState>({
+    upload: undefined,
+    remove: false,
+    previewURL: uploadedImageURL(props.bkey),
+  })
 
-  constructor(props: ImageUploaderProps) {
-    super(props)
-    this.state = {
-      upload: undefined,
-      remove: false,
-      showModal: false,
-      previewURL: uploadedImageURL(this.props.bkey),
-    }
-  }
+  const [showModal, setShowModal] = useState(false)
 
-  public fileChanged = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const fileSelector = useRef<HTMLInputElement>(null)
+
+  const fileChanged = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
       if (file.size > hardFileSizeLimit) {
@@ -47,117 +44,95 @@ export class ImageUploader extends React.Component<ImageUploaderProps, ImageUplo
       }
 
       const base64 = await fileToBase64(file)
-      this.setState(
-        {
-          bkey: this.props.bkey,
-          upload: {
-            fileName: file.name,
-            content: base64,
-            contentType: file.type,
-          },
-          remove: false,
-          previewURL: `data:${file.type};base64,${base64}`,
+      setState({
+        bkey: props.bkey,
+        upload: {
+          fileName: file.name,
+          content: base64,
+          contentType: file.type,
         },
-        () => {
-          this.props.onChange(this.state, this.props.instanceID, this.state.previewURL)
-        }
-      )
+        remove: false,
+        previewURL: `data:${file.type};base64,${base64}`,
+      })
+      props.onChange(state, props.instanceID, state.previewURL)
     }
   }
 
-  public removeFile = async () => {
-    if (this.fileSelector) {
-      this.fileSelector.value = ""
+  const removeFile = async () => {
+    if (fileSelector.current) {
+      fileSelector.current.value = ""
     }
 
-    this.setState(
-      {
-        bkey: this.props.bkey,
-        remove: true,
-        upload: undefined,
-        previewURL: undefined,
-      },
-      () => {
-        this.props.onChange(
-          {
-            bkey: this.state.bkey,
-            remove: this.state.remove,
-            upload: this.state.upload,
-          },
-          this.props.instanceID,
-          this.state.previewURL
-        )
-      }
-    )
+    setState({
+      bkey: props.bkey,
+      remove: true,
+      upload: undefined,
+      previewURL: undefined,
+    })
+    props.onChange(state, props.instanceID, state.previewURL)
   }
 
-  public selectFile = async () => {
-    if (this.fileSelector) {
-      this.fileSelector.click()
+  const selectFile = async () => {
+    if (fileSelector.current) {
+      fileSelector.current.click()
     }
   }
 
-  private openModal = () => {
-    this.setState({ showModal: true })
+  const openModal = () => {
+    setShowModal(true)
   }
 
-  private closeModal = async () => {
-    this.setState({ showModal: false })
+  const closeModal = () => {
+    setShowModal(false)
   }
 
-  private modal() {
-    return (
-      <Modal.Window className="c-image-viewer-modal" isOpen={this.state.showModal} onClose={this.closeModal} center={false} size="fluid">
-        <Modal.Content>{this.props.bkey ? <img alt="" src={uploadedImageURL(this.props.bkey)} /> : <img alt="" src={this.state.previewURL} />}</Modal.Content>
+  const ImageModal = () => (
+    <Modal.Window className="c-image-viewer-modal" isOpen={showModal} onClose={closeModal} center={false} size="fluid">
+      <Modal.Content>{props.bkey ? <img alt="" src={uploadedImageURL(props.bkey)} /> : <img alt="" src={state.previewURL} />}</Modal.Content>
 
-        <Modal.Footer>
-          <Button variant="tertiary" onClick={this.closeModal}>
-            Close
-          </Button>
-        </Modal.Footer>
-      </Modal.Window>
-    )
-  }
+      <Modal.Footer>
+        <Button variant="tertiary" onClick={closeModal}>
+          Close
+        </Button>
+      </Modal.Footer>
+    </Modal.Window>
+  )
+  return (
+    <ValidationContext.Consumer>
+      {(ctx) => (
+        <div
+          className={classSet({
+            "c-form-field": true,
+            "c-image-upload": true,
+            "m-error": hasError(props.field, ctx.error),
+          })}
+        >
+          <ImageModal />
+          {props.label && <label htmlFor={`input-${props.field}`}>{props.label}</label>}
 
-  public render() {
-    const isUploading = !!this.state.upload
-    const hasFile = (!this.state.remove && this.props.bkey) || isUploading
-
-    return (
-      <ValidationContext.Consumer>
-        {(ctx) => (
-          <div
-            className={classSet({
-              "c-form-field": true,
-              "c-image-upload": true,
-              "m-error": hasError(this.props.field, ctx.error),
-            })}
-          >
-            {this.modal()}
-            {this.props.label && <label htmlFor={`input-${this.props.field}`}>{this.props.label}</label>}
-
-            {hasFile && (
+          {(!state.remove && props.bkey) ||
+            (!!state.upload && (
               <div className="preview h-20">
-                <img alt="" onClick={this.openModal} src={this.state.previewURL} />
-                {!this.props.disabled && (
-                  <Button onClick={this.removeFile} variant="danger">
+                <img alt="" onClick={openModal} src={state.previewURL} />
+                {!props.disabled && (
+                  <Button onClick={removeFile} variant="danger">
                     X
                   </Button>
                 )}
               </div>
-            )}
+            ))}
 
-            <input ref={(e) => (this.fileSelector = e)} type="file" onChange={this.fileChanged} accept="image/*" />
-            {!hasFile && (
-              <Button onClick={this.selectFile} disabled={this.props.disabled}>
+          <input ref={fileSelector} type="file" onChange={fileChanged} accept="image/*" />
+          {!(!state.remove && props.bkey) ||
+            (!!state.upload && (
+              <Button onClick={selectFile} disabled={props.disabled}>
                 <Icon sprite={IconPhotograph} />
               </Button>
-            )}
-            <DisplayError fields={[this.props.field]} error={ctx.error} />
-            {this.props.children}
-          </div>
-        )}
-      </ValidationContext.Consumer>
-    )
-  }
+            ))}
+          <DisplayError fields={[props.field]} error={ctx.error} />
+          {props.children}
+        </div>
+      )}
+    </ValidationContext.Consumer>
+  )
 }
